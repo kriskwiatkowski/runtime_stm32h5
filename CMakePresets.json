@@ -7,21 +7,20 @@
     },
     "configurePresets": [
         {
-            "name": "stm32l4",
-            "displayName": "ARMv7E-M",
+            "name": "stm32h5",
+            "displayName": "ARMv8-M.main",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/out/${presetName}",
-            "toolchainFile": "toolchains/gcc-armv7e_m-unknown-none-eabi.toolchain",
+            "toolchainFile": "toolchains/gcc-armv8m.main-unknown-none-eabi.toolchain",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
-                "EXTRA_C_FLAGS": "-DSTM32L4"
+                "CMAKE_BUILD_TYPE": "Release"
             }
         }
     ],
     "buildPresets": [
         {
-            "name": "stm32l4",
-            "configurePreset": "stm32l4",
+            "name": "stm32h5",
+            "configurePreset": "stm32h5",
             "targets": [
                 "all",
                 "install"

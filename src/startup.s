@@ -710,3 +710,4 @@ g_pfnVectors:
 
 	.weak	LPTIM6_IRQHandler
 	.thumb_set LPTIM6_IRQHandler,Default_Handler
+	

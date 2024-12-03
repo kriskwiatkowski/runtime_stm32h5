@@ -21,16 +21,6 @@ endif()
 
 add_library(
     ${MAIN_TARGET} STATIC
-    src/main.c
-    src/printf.c
-    src/startup.s
-    src/stm32h5xx_hal_msp.c
-    src/stm32h5xx_it.c
-    src/syscalls.c
-    src/sysmem.c
-    src/system_stm32h5xx_ns.c
-    src/trace.c
-    src/detection.c
     src/stm32hal/Src/stm32h5xx_hal.c
     src/stm32hal/Src/stm32h5xx_hal_cortex.c
     src/stm32hal/Src/stm32h5xx_hal_crc.c
@@ -49,7 +39,17 @@ add_library(
     src/stm32hal/Src/stm32h5xx_hal_rtc.c
     src/stm32hal/Src/stm32h5xx_hal_rtc_ex.c
     src/stm32hal/Src/stm32h5xx_hal_uart.c
-    src/stm32hal/Src/stm32h5xx_hal_uart_ex.c)
+    src/stm32hal/Src/stm32h5xx_hal_uart_ex.c    
+    src/main.c
+    src/printf.c
+    src/startup.s
+    src/stm32h5xx_hal_msp.c
+    src/stm32h5xx_it.c
+    src/syscalls.c
+    src/sysmem.c
+    src/system_stm32h5xx_ns.c
+    src/trace.c
+    src/detection.c)
 
 target_sources(
     ${MAIN_TARGET}
@@ -81,7 +81,9 @@ target_include_directories(
 
 add_executable(
     hello
-    app/secure_manager_api.c)
+    app/secure_manager_api.c
+    src/syscalls.c
+    src/sysmem.c)
 target_include_directories(
         hello PRIVATE ${CMAKE_SOURCE_DIR}/app/)
 target_link_libraries(
@@ -90,9 +92,7 @@ target_link_libraries(
     
 target_link_options(
     hello PRIVATE
-    "-T${LINKER_SCRIPT}" 
-    -nostartfiles 
-    -lc -lgcc)
+    "-T${LINKER_SCRIPT}")
 
 target_postbuild_executable(
     hello 

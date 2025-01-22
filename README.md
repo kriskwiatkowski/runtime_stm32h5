@@ -16,5 +16,5 @@ Libraries will be compiled and placed in the ``build/pack`` directory.
 
 To run test program:
 ```
-st-flash --reset write out/stm32h5/pack/bin/hello.bin 0x8000000
+st-flash --reset write out/stm32h5/hello.bin 0x8000000
 ```

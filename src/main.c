@@ -23,7 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "detection.h"
-#include "update_fw.h"
+//#include "update_fw.h"
 
 /* USER CODE END Includes */
 

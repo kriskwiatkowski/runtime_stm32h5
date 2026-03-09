@@ -21,9 +21,10 @@ int main(void) {
     platform_init(PLATFORM_CLOCK_USERSPACE);
     platform_sync();
     size_t i = 0;
-    struct platform_attr_t a;
+    //struct platform_attr_t a;
+    printf("OK");
 
-    uint64_t t = platform_cpu_cyclecount();
+    //uint64_t t = platform_cpu_cyclecount();
     i++;
     t = platform_cpu_cyclecount() - t;
     printf("\n Hello world %u %u.\n", (uint32_t)(t >> 32), (uint32_t)t);

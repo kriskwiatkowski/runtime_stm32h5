@@ -11,6 +11,7 @@ set(CMAKE_ASM_COMPILER              ${CMAKE_C_COMPILER})
 set(CMAKE_CXX_COMPILER              ${TOOLCHAIN_PREFIX}g++)
 set(CMAKE_LINKER                    ${TOOLCHAIN_PREFIX}g++)
 set(CMAKE_OBJCOPY                   ${TOOLCHAIN_PREFIX}objcopy)
+set(CMAKE_OBJDUMP                   ${TOOLCHAIN_PREFIX}objdump)
 set(CMAKE_SIZE                      ${TOOLCHAIN_PREFIX}size)
 
 # Set arch for source compilation

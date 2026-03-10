@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi cmake ninja-build
+
+      - name: Build all presets
+        run: |
+          cmake --preset stm32h5
+          cmake --build --preset stm32h5
+          cmake --preset stm32h5-minsizerel
+          cmake --build --preset stm32h5-minsizerel
+          cmake --preset stm32h5-reldebinfo
+          cmake --build --preset stm32h5-reldebinfo
+
+      - name: Package with CPack
+        run: |
+          cpack --preset stm32h5
+          cpack --preset stm32h5-minsizerel
+          cpack --preset stm32h5-reldebinfo
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          VERSION=$(grep -oP 'VERSION \K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | head -1)
+          echo "tag=v${VERSION}-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Release ${{ steps.tag.outputs.version }} (build ${{ github.run_number }})"
+          body: |
+            Automated release from commit ${{ github.sha }}.
+
+            ## Packages
+            - `stm32h5` — Release build
+            - `stm32h5-minsizerel` — MinSizeRel build
+            - `stm32h5-reldebinfo` — RelWithDebInfo build
+          files: out/package/**/*.tar.gz
+          make_latest: true

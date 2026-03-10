@@ -55,5 +55,5 @@ jobs:
             - `stm32h5` — Release build
             - `stm32h5-minsizerel` — MinSizeRel build
             - `stm32h5-reldebinfo` — RelWithDebInfo build
-          files: out/package/**/*.tar.gz
+          files: out/package/*/*.tar.gz
           make_latest: true

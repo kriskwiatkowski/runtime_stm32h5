@@ -1,6 +1,6 @@
 # STM32H5 Basic Runtime
 
-![Build Status](../../actions/workflows/build.yml/badge.svg)
+![Build Status](https://github.com/kriskwiatkowski/runtime_stm32h5/actions/workflows/release.yml/badge.svg?branch=main)
 
 STM32H573xx microcontroller firmware with basic peripherals.
 

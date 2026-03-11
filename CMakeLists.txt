@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22)
 set(RUNNER_TARGET rtm_stm32h5)
 project(
     ${RUNNER_TARGET}_runtime
-    VERSION 0.0.1
+    VERSION 0.0.2
     LANGUAGES C ASM)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)

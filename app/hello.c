@@ -40,7 +40,6 @@ int main(void) {
     for (i = 0; i < sizeof(buf); i++) {
         printf("%02x", buf[i]);
     }
-
     printf("\n");
     return 0;
 }

@@ -47,7 +47,7 @@ _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" Ram type memory */
 _sstack = _estack - _Min_Stack_Size;
 
 _Min_Heap_Size = 0x200;      /* Set heap to 512B  */
-_Min_Stack_Size = 0x96000;   /* Set stack to 600K */
+_Min_Stack_Size = 0x40000;   /* Set stack to 256K */
 
 /* Sections */
 SECTIONS

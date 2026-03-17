@@ -8,8 +8,7 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
         -Wl,--whole-archive ${RUNNER_TARGET} -Wl,--no-whole-archive)
 endif()
 
-target_link_options(hello PRIVATE
-    "-T${CMAKE_SOURCE_DIR}/src/CMSIS/startup_gnu/STM32H573xx_FLASH.ld")
+target_link_options(hello PRIVATE -Wl,-z,noexecstack)
 target_postbuild_executable(hello)
 
 

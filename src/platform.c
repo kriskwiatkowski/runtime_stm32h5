@@ -12,10 +12,11 @@
 #include "stm32h5xx.h"
 #include "stm32h5xx_hal.h"
 
-uint32_t platform_xorshift32_u32(void);
-void     platform_usart1_init(void);
-void    *platform_get_uart1_handle(void);
-void     platform_rng_init(void);
+uint32_t    platform_xorshift32_u32(void);
+void        platform_usart1_init(void);
+void       *platform_get_uart1_handle(void);
+void        platform_rng_init(void);
+static void cache_init(void);
 
 /* MPU Configuration */
 static void mpu_config(bool enable) {
@@ -84,10 +85,11 @@ static void cyclecount_reset(void) {
  * @retval false if cycle counting could not be enabled (e.g., DWT not present).
  */
 static bool cyclecount_init(void) {
+#if 0
     if (CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk) {
         return true;  // Already initialized
     }
-
+#endif
     /* Performs a DWT availability check, according to Table C1-2. Note that
      * this check can be done before enabling TRCENA. */
     if (!DWT) {
@@ -235,8 +237,25 @@ void SystemClock_Config(bool is_32mhz) {
   * @retval None
   */
 static void cache_init(void) {
-    // Enable instruction cache in 1-way (direct mapped cache)
-    if (HAL_ICACHE_ConfigAssociativityMode(ICACHE_1WAY) != HAL_OK) {
+    if (HAL_ICACHE_Disable() != HAL_OK) {
+        err_handler();
+    }
+
+    if (HAL_ICACHE_Invalidate() != HAL_OK) {
+        err_handler();
+    }
+
+    /* DSB + ISB are required after cache invalidation: DSB ensures the
+     * invalidation completes before any subsequent memory accesses, and ISB
+     * flushes the Cortex-M33 pipeline so the next instruction fetch is a
+     * guaranteed cache miss. */
+    __DSB();
+    __ISB();
+
+    __HAL_FLASH_PREFETCH_BUFFER_ENABLE();
+
+    // Enable instruction cache in 2-way (set associative cache)
+    if (HAL_ICACHE_ConfigAssociativityMode(ICACHE_2WAYS) != HAL_OK) {
         err_handler();
     }
     if (HAL_ICACHE_Enable() != HAL_OK) {
@@ -268,7 +287,6 @@ static void gpio_init(void) {
 }
 
 int platform_init(platform_op_mode_t a) {
-
     /* Configure MPU to protect the memory region where the secret is stored. This is not strictly
      * necessary, but it adds an extra layer of security against bugs in the code that could potentially
      * leak the secret. It also allows to test that the MPU is working correctly. */
@@ -314,6 +332,6 @@ uint64_t platform_cpu_cyclecount(void) {
     return DWT->CYCCNT;
 }
 
-void platform_sync(void) {  // No-op on this platform.
+void platform_sync(void) {
     cyclecount_reset();
 }

@@ -46,7 +46,7 @@ _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" Ram type memory */
 _sstack = _estack - _Min_Stack_Size;
 
 _Min_Heap_Size = 0x200;      /* Set heap to 512B  */
-_Min_Stack_Size = 0x96000;   /* Set stack to 600K */
+_Min_Stack_Size = 0x5000;   /* Set stack to 128K */
 
 /* Sections */
 SECTIONS
@@ -74,15 +74,6 @@ SECTIONS
 
     . = ALIGN(4);
     _etext = .;        /* define a global symbols at end of code */
-  } >FLASH
-
-  /* Constant data into "FLASH" Rom type memory */
-  .rodata :
-  {
-    . = ALIGN(4);
-    *(.rodata)         /* .rodata sections (constants, strings, etc.) */
-    *(.rodata*)        /* .rodata* sections (constants, strings, etc.) */
-    . = ALIGN(4);
   } >FLASH
 
   .ARM.extab (READONLY) : /* The READONLY keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
@@ -138,6 +129,8 @@ SECTIONS
   {
     . = ALIGN(4);
     _sdata = .;        /* create a global symbol at data start */
+    *(.rodata)         /* .rodata sections (constants, strings, etc.) */
+    *(.rodata*)        /* .rodata* sections (constants, strings, etc.) */
     *(.data)           /* .data sections */
     *(.data*)          /* .data* sections */
     *(.RamFunc)        /* .RamFunc sections */

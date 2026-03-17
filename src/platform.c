@@ -235,8 +235,26 @@ void SystemClock_Config(bool is_32mhz) {
   * @retval None
   */
 static void cache_init(void) {
-    // Enable instruction cache in 1-way (direct mapped cache)
-    if (HAL_ICACHE_ConfigAssociativityMode(ICACHE_1WAY) != HAL_OK) {
+    // Disable and invalidate the cache before configuring it.
+    if (HAL_ICACHE_Disable() != HAL_OK) {
+        err_handler();
+    }
+
+    if (HAL_ICACHE_Invalidate() != HAL_OK) {
+        err_handler();
+    }
+
+    /* DSB + ISB are required after cache invalidation: DSB ensures the
+     * invalidation completes before any subsequent memory accesses, and ISB
+     * flushes the Cortex-M33 pipeline so the next instruction fetch is a
+     * guaranteed cache miss. */
+    __DSB();
+    __ISB();
+
+    __HAL_FLASH_PREFETCH_BUFFER_ENABLE();
+
+    // Enable instruction cache in 2-way (direct mapped cache)
+    if (HAL_ICACHE_ConfigAssociativityMode(ICACHE_2WAYS) != HAL_OK) {
         err_handler();
     }
     if (HAL_ICACHE_Enable() != HAL_OK) {
@@ -311,9 +329,7 @@ uint64_t platform_cpu_cyclecount(void) {
      * casting to uint64_t to match the function signature, but the value is still
      * 32-bit and will wrap around every ~4295 million cycles.
      * Should better precision be needed, one can adapt SysTick. */
-    return DWT->CYCCNT;
+    return (uint64_t)DWT->CYCCNT;
 }
 
-void platform_sync(void) {  // No-op on this platform.
-    cyclecount_reset();
-}
+void platform_sync(void) { cyclecount_reset(); }

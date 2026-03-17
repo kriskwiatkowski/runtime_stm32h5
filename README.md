@@ -223,6 +223,16 @@ Gitea Actions builds and packages all three presets (`stm32h5`, `stm32h5-minsize
 - USART3: PB10 (TX), PB11 (RX)
 - Clock: HSI (32 MHz), HSI48 (for RNG)
 
+## Note on CPU cycles measurement
+
+The board must be flashed and hard-reset before each measurement to ensure
+the cycle counter starts from a clean state. Using pyOCD:
+
+```
+pyocd flash app/hello.bin
+pyocd reset -m hw
+```
+
 ## License
 
 See LICENSE.txt files in respective driver directories.

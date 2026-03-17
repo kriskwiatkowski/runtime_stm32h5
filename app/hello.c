@@ -29,10 +29,30 @@ int main(void) {
     printf("CPU Clock: %u MHz.\n", SystemCoreClock / 1000000);
 
     // Check if cycle counting works
-    uint64_t t = platform_cpu_cyclecount();
+    uint32_t t = (uint32_t)platform_cpu_cyclecount();
     i++;
     t = platform_cpu_cyclecount() - t;
-    printf("Cycle count: %llu.\n", t);
+    printf("Cycle count: %lu.\n", t);
+
+    for (i = 0; i < 10; i++) {
+        uint32_t t1 = (uint32_t)platform_cpu_cyclecount();
+        for (size_t _ = 0; _ < 1000000; _++) {
+            __asm volatile("nop");
+        }
+        uint32_t t2 = (uint32_t)platform_cpu_cyclecount();
+        printf("Counters: %lu %lu, diff: %lu\n", t1, t2, t2 - t1);
+
+        /*
+        * | Instruction         | Cycles     |
+        * |---------------------|------------|
+        * | nop	                | 1          |
+        * | increment _	        | 1          |
+        * | cmp _ < 1_000_000	| 1          |
+        * | branch (back to top)| 1          |
+        * |   Total	            | 4          |
+        * |   Expected diff     | ~4_000_000 |
+        */
+    }
 
     // Check getting a random number
     platform_get_random(buf, sizeof(buf));

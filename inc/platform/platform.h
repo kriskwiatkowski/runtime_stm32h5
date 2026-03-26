@@ -25,8 +25,12 @@ typedef enum {
     //!< Sets the CPU clock to 24Mhz (used for benchmarking)
     PLATFORM_SCA_TRIGGER_HIGH,
     //!< Sets the trigger pin high
-    PLATFORM_SCA_TRIGGER_LOW
+    PLATFORM_SCA_TRIGGER_LOW,
     //!< Sets the trigger pin low
+    PLATFORM_CACHE_ENABLE,
+    //!< Enable cache
+    PLATFORM_CACHE_DISABLE
+    //!< Disable cache
 } platform_op_mode_t;
 
 /**

@@ -20,19 +20,8 @@
 
 extern uint32_t SystemCoreClock;
 
-int main(void) {
-    size_t  i       = 0;
-    uint8_t buf[32] = { 0 };
-
-    platform_init(PLATFORM_CLOCK_USERSPACE);
-    printf("Board initialized...\n");
-    printf("CPU Clock: %u MHz.\n", SystemCoreClock / 1000000);
-
-    // Check if cycle counting works
-    uint32_t t = (uint32_t)platform_cpu_cyclecount();
-    i++;
-    t = platform_cpu_cyclecount() - t;
-    printf("Cycle count: %lu.\n", t);
+void run_bench(void) {
+    size_t i = 0;
 
     for (i = 0; i < 10; i++) {
         uint32_t t1 = (uint32_t)platform_cpu_cyclecount();
@@ -53,6 +42,21 @@ int main(void) {
         * |   Expected diff     | ~4_000_000 |
         */
     }
+}
+
+int main(void) {
+    size_t  i       = 0;
+    uint8_t buf[32] = { 0 };
+
+    platform_init(PLATFORM_CLOCK_USERSPACE);
+    printf("Board initialized...\n");
+    printf("CPU Clock: %u MHz.\n", SystemCoreClock / 1000000);
+
+    // Check if cycle counting works
+    uint32_t t = (uint32_t)platform_cpu_cyclecount();
+    i++;
+    t = platform_cpu_cyclecount() - t;
+    printf("Cycle count: %lu.\n", t);
 
     // Check getting a random number
     platform_get_random(buf, sizeof(buf));
@@ -60,6 +64,16 @@ int main(void) {
     for (i = 0; i < sizeof(buf); i++) {
         printf("%02x", buf[i]);
     }
+    printf("\n");
+
+    printf("Running benchmark with cache enabled...\n");
+    run_bench();
+
+    // Disable cache and try do same again, to see the difference in cycle counts and performance.
+    printf("Running benchmark with cache disabled...\n");
+    struct platform_attr_t a = { .n = 1, .attr = { PLATFORM_CACHE_DISABLE } };
+    platform_set_attr(&a);
+    run_bench();
 
     printf("\n");
     return 0;

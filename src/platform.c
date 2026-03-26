@@ -230,11 +230,13 @@ void SystemClock_Config(bool is_32mhz) {
 }
 
 /**
-  * @brief ICACHE Initialization Function
-  * @param None
+  * @brief ICACHE Sets up the cache
+  *        Enables or disables the instruction cache,
+  *        - ICACHE - if enabled it configures it as associative 2-way cache (direct mapped).
+  * @param is_enable If true, enable the cache. If false, disable the cache.
   * @retval None
   */
-static void cache_init(void) {
+static void setup_cache(bool is_enable) {
     // Disable and invalidate the cache before configuring it.
     if (HAL_ICACHE_Disable() != HAL_OK) {
         err_handler();
@@ -251,14 +253,16 @@ static void cache_init(void) {
     __DSB();
     __ISB();
 
-    __HAL_FLASH_PREFETCH_BUFFER_ENABLE();
+    if (is_enable) {
+        __HAL_FLASH_PREFETCH_BUFFER_ENABLE();
 
-    // Enable instruction cache in 2-way (direct mapped cache)
-    if (HAL_ICACHE_ConfigAssociativityMode(ICACHE_2WAYS) != HAL_OK) {
-        err_handler();
-    }
-    if (HAL_ICACHE_Enable() != HAL_OK) {
-        err_handler();
+        // Enable instruction cache in 2-way (direct mapped cache)
+        if (HAL_ICACHE_ConfigAssociativityMode(ICACHE_2WAYS) != HAL_OK) {
+            err_handler();
+        }
+        if (HAL_ICACHE_Enable() != HAL_OK) {
+            err_handler();
+        }
     }
 }
 
@@ -297,8 +301,8 @@ int platform_init(platform_op_mode_t a) {
     SystemClock_Config(a == PLATFORM_CLOCK_USERSPACE);
 
     // Initialize peripherals
-    gpio_init();   // GPIO is needed for USART1 and RNG.
-    cache_init();  // Improve execution speed by enabling instruction cache.
+    gpio_init();        // GPIO is needed for USART1 and RNG.
+    setup_cache(true);  // Improve execution speed by enabling I-cache.
     platform_rng_init();  // Initialize the hardware RNG, which is used to seed the software RNG.
     platform_usart1_init(); /* Initialize USART1, this is connected to CN10 (ST-Link Virtual COM Port)
                                * and is used for debugging and communication with the host.
@@ -315,6 +319,10 @@ bool platform_set_attr(const struct platform_attr_t *a) {
             case PLATFORM_CLOCK_MAX:
             case PLATFORM_CLOCK_USERSPACE:
                 SystemClock_Config(a->attr[i] == PLATFORM_CLOCK_USERSPACE);
+                break;
+            case PLATFORM_CACHE_ENABLE:
+            case PLATFORM_CACHE_DISABLE:
+                setup_cache(a->attr[i] == PLATFORM_CACHE_ENABLE);
                 break;
             default:
                 return false;

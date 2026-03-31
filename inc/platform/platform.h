@@ -45,6 +45,25 @@ struct platform_attr_t {
     size_t   n;
 };
 
+enum {
+    PLATFORM_LOG_TYPE_U32    = 0,
+    PLATFORM_LOG_TYPE_STRING = 1
+};
+
+struct platform_log_t {
+    // Channel number (0 or 1)
+    uint8_t channel;
+    // Data type: PLATFORM_LOG_TYPE_*
+    uint8_t type;
+    // Data to transfer
+    union {
+        // 32-byte value
+        uint32_t data;
+        // String value (zero-terminated)
+        const char *str;
+    } a;
+};
+
 // Set platform attribute.
 bool platform_set_attr(const struct platform_attr_t *a);
 
@@ -62,3 +81,6 @@ char platform_getchar(void);
 
 // Put a character to the platform's output
 void platform_putchar(char c);
+
+// Multi channel debug logging utility
+void platform_log(const struct platform_log_t *log);

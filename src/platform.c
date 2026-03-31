@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 AmongBytes, Ltd.
-// SPDX-FileContributor: Kris Kwiatkowski <kris@amongbytes.com>
+// SPDX-FileContributor: Krzysztof Kwiatkowski <kris (at) amongbytes.com>
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
 #include <iso646.h>
@@ -121,6 +121,50 @@ static bool cyclecount_init(void) {
     return true;
 }
 
+// Enables ITM (Instrumentation Trace Macrocell) for printf support in SWO viewer. This is optional.
+static void itm_init(void) {
+    // Configure the SWO Pin (PB3). For SWO, the PB3 must be Alternate Function (AF0)
+    GPIOB->MODER   &= ~GPIO_MODER_MODE3_Msk;
+    GPIOB->MODER   |= (0x2 << GPIO_MODER_MODE3_Pos);  // AF mode
+    GPIOB->AFR[0]  &= ~GPIO_AFRL_AFSEL3_Msk;  // AF0 is usually Trace/SWO
+    GPIOB->OSPEEDR |= (0x3 << GPIO_OSPEEDR_OSPEED3_Pos);  // Very High Speed
+
+    // Enable TRACE_EN in DBGMCU
+    DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
+
+    // Unlock ITM (not sure if that's needed)
+    ITM->LAR = 0xC5ACCE55;
+
+    // Enable ITM and Stimulus Port 0
+    ITM->TCR |= ITM_TCR_ITMENA_Msk;  // Global ITM Enable
+    ITM->TER |= (1UL << 0);          // Enable Stimulus Port 0
+}
+
+// SWO clock is based on CPU clock, so it needs to be updated when CPU clock changes.
+static void update_swo_clock(uint32_t cpu_hz) {
+    static const uint32_t target_swo_baud = 2000000;  // 2 MHz is very stable
+    // Prescaler = (CPU_Clock / Target_Baud) - 1
+    TPI->ACPR = (cpu_hz / target_swo_baud) - 1;
+}
+
+void platform_log(const struct platform_log_t *log) {
+    uint8_t c = log->channel;
+    if (log->type == PLATFORM_LOG_TYPE_U32) {
+        // Log uint32_t data to channel 0
+        while (ITM->PORT[c].u32 == 0UL)
+            ;
+        ITM->PORT[c].u32 = log->a.data;
+    } else if (log->type == PLATFORM_LOG_TYPE_STRING) {
+        // Log string data to channel 1
+        const uint8_t *str = (const uint8_t *)log->a.str;
+        while (*str) {
+            while (ITM->PORT[c].u8 == 0UL)
+                ;
+            ITM->PORT[c].u8 = *str++;
+        }
+    }
+}
+
 /**
   * @brief  This function is executed in case of error occurrence.
   * @retval None
@@ -179,6 +223,7 @@ void SystemClock_Config(bool is_32mhz) {
         }
 
         __HAL_FLASH_SET_PROGRAM_DELAY(FLASH_PROGRAMMING_DELAY_0);
+        update_swo_clock(32000000);  // Update SWO clock for 32 MHz CPU clock
     } else {
 
         // High-speed setup: 250 MHz SYSCLK from HSI via PLL1.
@@ -226,6 +271,7 @@ void SystemClock_Config(bool is_32mhz) {
 
         // Configure flash programming delay for 168-250 MHz.
         __HAL_FLASH_SET_PROGRAM_DELAY(FLASH_PROGRAMMING_DELAY_2);
+        update_swo_clock(250000000);  // Update SWO clock for 250 MHz CPU clock
     }
 }
 
@@ -285,8 +331,8 @@ void _putchar(char character) { platform_putchar(character); }
 
 static void gpio_init(void) {
     /* GPIO Ports Clock Enable */
-    __HAL_RCC_GPIOB_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
 }
 
 int platform_init(platform_op_mode_t a) {
@@ -305,9 +351,10 @@ int platform_init(platform_op_mode_t a) {
     setup_cache(true);  // Improve execution speed by enabling I-cache.
     platform_rng_init();  // Initialize the hardware RNG, which is used to seed the software RNG.
     platform_usart1_init(); /* Initialize USART1, this is connected to CN10 (ST-Link Virtual COM Port)
-                               * and is used for debugging and communication with the host.
-                               * It is also possibel to use USAERT3, that is connected to D0/D1 (Arduino ports). */
+                             * and is used for debugging and communication with the host.
+                             * It is also possibel to use USAERT3, that is connected to D0/D1 (Arduino ports). */
     cyclecount_init();  // Initialize the cycle counter, which is used for timing measurements.
+    itm_init();
     return 0;
 }
 

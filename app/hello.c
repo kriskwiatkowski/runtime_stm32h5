@@ -44,6 +44,20 @@ void run_bench(void) {
     }
 }
 
+void send_debug_trace(void) {
+    char                 *string  = "The number is: ";
+    struct platform_log_t log_str = { .channel = 1,
+                                      .type    = PLATFORM_LOG_TYPE_STRING };
+    log_str.a.str                 = string;
+
+    struct platform_log_t log_u32 = {
+        .a.data = 43, .channel = 0, .type = PLATFORM_LOG_TYPE_U32
+    };
+
+    platform_log(&log_str);
+    platform_log(&log_u32);
+}
+
 int main(void) {
     size_t  i       = 0;
     uint8_t buf[32] = { 0 };
@@ -74,6 +88,7 @@ int main(void) {
     struct platform_attr_t a = { .n = 1, .attr = { PLATFORM_CACHE_DISABLE } };
     platform_set_attr(&a);
     run_bench();
+    send_debug_trace();
 
     printf("\n");
     return 0;

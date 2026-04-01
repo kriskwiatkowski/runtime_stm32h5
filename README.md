@@ -284,7 +284,7 @@ The ``--swv_system_clock`` parameter must match the actual CPU frequency (
 - ``32000000`` (32 MHz) when using ``PLATFORM_CLOCK_USERSPACE``.
 - ``250000000`` (250 MHz) when using ``PLATFORM_CLOCK_MAX``.
 
-Firmware can switch frequency after initialization.
+Firmware can safely switch frequency after initialization without affecting ITM.
 
 ## License
 

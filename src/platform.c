@@ -108,8 +108,10 @@ static bool cyclecount_init(void) {
 
     /* Start cycle counter. Note that this operation will try to write read-only
      * bits 31:28 (NUMCOMP). Nevertheless, Writing 0 does not affect them; they
-     * will still read back as the hardware value. */
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+     * will still read back as the hardware value.
+     * It will also enable PC sampling and set sync tap to control packet rate. */
+    DWT->CTRL |=
+        DWT_CTRL_CYCCNTENA_Msk | DWT_CTRL_PCSAMPLENA_Msk | DWT_CTRL_SYNCTAP_Msk;
 
     // Wait until cycle counter is enabled
     while (!(DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk)) {
@@ -117,7 +119,6 @@ static bool cyclecount_init(void) {
     // Wait until cycle counter starts counting
     while (DWT->CYCCNT == 0) {
     }
-
     return true;
 }
 
@@ -132,17 +133,22 @@ static void itm_init(void) {
     // Enable TRACE_EN in DBGMCU
     DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
 
-    // Unlock ITM (not sure if that's needed)
-    ITM->LAR = 0xC5ACCE55;
+    /* Master Trace Control:
+     * Bit 0 - ITMENA: Enable ITM
+     * Bit 2 - SYNCENA: Periodic sync packets so the decoder can lock onto the SWO stream
+     * Bit 3 - DWTENA: Forwards DWT-generated packets (including PC samples) through ITM to the TPIU */
+    ITM->TCR |= ITM_TCR_SYNCENA_Msk | ITM_TCR_DWTENA_Msk | ITM_TCR_ITMENA_Msk;
 
-    // Enable ITM and Stimulus Port 0
-    ITM->TCR |= ITM_TCR_ITMENA_Msk;  // Global ITM Enable
-    ITM->TER |= (1UL << 0);          // Enable Stimulus Port 0
+    // Unprivileged access allowed on ALL ports
+    ITM->TPR = 0xFFFFFFFF;
+
+    // Enable all stimulus ports
+    ITM->TER = 0xFFFFFFFF;
 }
 
 // SWO clock is based on CPU clock, so it needs to be updated when CPU clock changes.
 static void update_swo_clock(uint32_t cpu_hz) {
-    static const uint32_t target_swo_baud = 2000000;  // 2 MHz is very stable
+    static const uint32_t target_swo_baud = 2000000;  // 1 MHz is very stable
     // Prescaler = (CPU_Clock / Target_Baud) - 1
     TPI->ACPR = (cpu_hz / target_swo_baud) - 1;
 }

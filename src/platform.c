@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 AmongBytes, Ltd.
-// SPDX-FileContributor: Kris Kwiatkowski <kris@amongbytes.com>
+// SPDX-FileContributor: Krzysztof Kwiatkowski <kris (at) amongbytes.com>
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
 #include <iso646.h>
@@ -11,6 +11,9 @@
 #include "printf.h"
 #include "stm32h5xx.h"
 #include "stm32h5xx_hal.h"
+
+// Flags if cyclecount was initialized
+static bool kCyclecountInit = false;
 
 uint32_t platform_xorshift32_u32(void);
 void     platform_usart1_init(void);
@@ -84,7 +87,8 @@ static void cyclecount_reset(void) {
  * @retval false if cycle counting could not be enabled (e.g., DWT not present).
  */
 static bool cyclecount_init(void) {
-    if (CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk) {
+
+    if (kCyclecountInit) {
         return true;  // Already initialized
     }
 
@@ -107,18 +111,115 @@ static bool cyclecount_init(void) {
     DWT->CYCCNT = 0;
 
     /* Start cycle counter. Note that this operation will try to write read-only
-     * bits 31:28 (NUMCOMP). Nevertheless, Writing 0 does not affect them; they
-     * will still read back as the hardware value. */
+     * bits 31:28 (NUMCOMP).
+     * It will also enable PC sampling and set sync tap to control packet rate. */
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+    // Ensure DWT_CTRL_CYCCNTENA_Msk is written
+    __DSB();
+    __ISB();
+
+    /* Enable PC sampling in the DWT. Every N clock cycles, the current value of
+     * the PC is automatically captured and emitted as an ITM packet over SWO. */
+    DWT->CTRL |= DWT_CTRL_PCSAMPLENA_Msk;
+    /* Sets which bit of the cycle counter is used to trigger periodic synchronisation
+     * packets on the SWO stream. This allow the host-side decoder (orbuculum, pyOCD)
+     * to lock onto the byte stream and correctly frame the incoming ITM packets.
+     * PC samples have source ID = 2 and carry 32-bit value. This corresponds to
+     * the value 0x17 in python script for reading ITM packets.
+     * At higher speed the DWT_CTRL_CYCTAP_Pos may be the better choice (avoids flooding
+     * SWO). */
+    // TODO: This doesn't seem to be supported by the board.
+    // It seems like SYNCTAP is RAZ/WI on STM32H573 - the hardware uses a fixed
+    //       internal tap at bit 6 (÷64) regardless of SYNCTAP value.
+    //DWT->CTRL |= DWT_CTRL_SYNCTAP_Msk;
+
+    /* Controls the PC sampling rate using a two-stage clock divider:
+     *
+     * Stage 1 (SYNCTAP=0x3): taps bit 14 of CYCCNT, producing a tick every
+     *                        2^14 = 16384 cycles.
+     * Stage 2 (POSTPRESET=15): counts 16 ticks from stage 1 before capturing
+     *                        and emitting a PC sample over SWO.
+     *
+     * sample rate = CPU_CLK / (64 * (POSTPRESET + 1))
+     *             = 32 MHz  / (64 * 16)
+     *             ~ 31,250 samples/sec
+     *             = one sample every 1,024 cycles
+     *
+     * It seems, that on the board the SYNCTAP is fixed to SYNCTAP=0x1, which taps
+     * bit 6 of CYCCNT, producing a tick every 64 cycles.
+     *
+     * For more information see Architecture Reference Manual, section about
+     * "DWT_CTRL, Control register"
+     */
+    DWT->CTRL |= (0xF << DWT_CTRL_POSTPRESET_Pos);
 
     // Wait until cycle counter is enabled
     while (!(DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk)) {
     }
+
     // Wait until cycle counter starts counting
     while (DWT->CYCCNT == 0) {
     }
 
+    kCyclecountInit = true;
     return true;
+}
+
+// SWO clock is based on CPU clock, so it needs to be updated when CPU clock changes.
+static void update_swo_clock(uint32_t cpu_hz) {
+    static const uint32_t target_swo_baud = 2000000;  // 2 MHz is very stable
+    // Prescaler = (CPU_Clock / Target_Baud) - 1
+    TPI->ACPR = (cpu_hz / target_swo_baud) - 1;
+}
+
+// Enables ITM (Instrumentation Trace Macrocell) for printf support in SWO viewer. This is optional.
+static void itm_init(void) {
+    // Configure the SWO Pin (PB3). For SWO, the PB3 must be Alternate Function (AF0)
+    GPIOB->MODER   &= ~GPIO_MODER_MODE3_Msk;
+    GPIOB->MODER   |= (0x2 << GPIO_MODER_MODE3_Pos);  // AF mode
+    GPIOB->AFR[0]  &= ~GPIO_AFRL_AFSEL3_Msk;  // AF0 is usually Trace/SWO
+    GPIOB->OSPEEDR |= (0x3 << GPIO_OSPEEDR_OSPEED3_Pos);  // Very High Speed
+
+    // Enable TRACE_EN in DBGMCU
+    DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
+
+    // Use UART/NRZ encoding, which is what STLINK expects on the SWO pin
+    TPI->SPPR = 2;
+    // Update SWO clock based on current CPU clock
+    update_swo_clock(HAL_RCC_GetSysClockFreq());
+
+    /* Master Trace Control:
+     * Bit 0 - ITMENA: Enable ITM
+     * Bit 2 - SYNCENA: Periodic sync packets so the decoder can lock onto the SWO stream
+     * Bit 3 - DWTENA: Forwards DWT-generated packets (including PC samples) through ITM to the TPIU */
+    ITM->TCR |= ITM_TCR_SYNCENA_Msk | ITM_TCR_DWTENA_Msk | ITM_TCR_ITMENA_Msk;
+
+    // Unprivileged access allowed on ALL ports
+    ITM->TPR = 0xFFFFFFFF;
+
+    // Enable all stimulus ports
+    ITM->TER = 0xFFFFFFFF;
+}
+
+void platform_log(const struct platform_log_t *log) {
+    uint8_t c = log->channel;
+    if (log->type == PLATFORM_LOG_TYPE_U32) {
+        // Log uint32_t data to channel 0
+        while (ITM->PORT[c].u32 == 0UL)
+            ;
+        ITM->PORT[c].u32 = log->a.data;
+        while (ITM->PORT[c].u32 == 0UL)
+            ;
+    } else if (log->type == PLATFORM_LOG_TYPE_STRING) {
+        // Log string data to channel 1
+        const uint8_t *str = (const uint8_t *)log->a.str;
+        while (*str) {
+            while (ITM->PORT[c].u8 == 0UL)
+                ;
+            ITM->PORT[c].u8 = *str++;
+        }
+    }
 }
 
 /**
@@ -179,6 +280,7 @@ void SystemClock_Config(bool is_32mhz) {
         }
 
         __HAL_FLASH_SET_PROGRAM_DELAY(FLASH_PROGRAMMING_DELAY_0);
+        update_swo_clock(32000000);  // Update SWO clock for 32 MHz CPU clock
     } else {
 
         // High-speed setup: 250 MHz SYSCLK from HSI via PLL1.
@@ -226,6 +328,7 @@ void SystemClock_Config(bool is_32mhz) {
 
         // Configure flash programming delay for 168-250 MHz.
         __HAL_FLASH_SET_PROGRAM_DELAY(FLASH_PROGRAMMING_DELAY_2);
+        update_swo_clock(250000000);  // Update SWO clock for 250 MHz CPU clock
     }
 }
 
@@ -285,8 +388,8 @@ void _putchar(char character) { platform_putchar(character); }
 
 static void gpio_init(void) {
     /* GPIO Ports Clock Enable */
-    __HAL_RCC_GPIOB_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
 }
 
 int platform_init(platform_op_mode_t a) {
@@ -305,8 +408,9 @@ int platform_init(platform_op_mode_t a) {
     setup_cache(true);  // Improve execution speed by enabling I-cache.
     platform_rng_init();  // Initialize the hardware RNG, which is used to seed the software RNG.
     platform_usart1_init(); /* Initialize USART1, this is connected to CN10 (ST-Link Virtual COM Port)
-                               * and is used for debugging and communication with the host.
-                               * It is also possibel to use USAERT3, that is connected to D0/D1 (Arduino ports). */
+                             * and is used for debugging and communication with the host.
+                             * It is also possibel to use USAERT3, that is connected to D0/D1 (Arduino ports). */
+    itm_init();
     cyclecount_init();  // Initialize the cycle counter, which is used for timing measurements.
     return 0;
 }

@@ -233,6 +233,131 @@ pyocd flash app/hello.bin
 pyocd reset -m hw
 ```
 
+## ITM Profiling and data parsing
+
+This project can use ARM CoreSight ITM (Instrumentation Trace Macrocell) to profile firmware performance with near-zero CPU overhead. Unlike UART, which stalls the CPU while waiting for registers, ITM is a hardware-accelerated debug channel built into the Cortex-M33 core.
+
+### Receiving Arbitrary Data (Binary Blobs)
+
+To transmit complex data types (like C structs), the firmware breaks the object into 1 or 4-byte chunks and sends them sequentially to a dedicated Stimulus Port. 1 byte chunks are used for strings and 4-byte chunks for sending 32-bit numbers.
+
+Example below shows how to use API:
+
+```
+    char  *string  = "The number is: ";
+    struct platform_log_t log_str = {
+        .type    = PLATFORM_LOG_TYPE_STRING,
+        .channel = 1,
+        .a.str = string
+    };
+
+    struct platform_log_t log_u32 = {
+        .type = PLATFORM_LOG_TYPE_U32
+        .channel = 0,
+        .a.data = 43,
+    };
+
+    platform_log(&log_str);
+    platform_log(&log_u32);
+```
+
+Note that string is sent to ``.channel=1`` and integer is sent to ``.channel=1``.
+
+To receive this data on the host, one may start `pyocd` server in following way
+
+```
+ pyocd gdbserver -t stm32h573iikx \
+  --connect attach  \
+  -O enable_swv=True \
+  -O swv_system_clock=32000000 \
+  -O swv_clock=2000000 \
+  -O swv_raw_port=3443
+```
+
+And use ``utils/parse_itm.py`` to read the data.
+
+**Important: Clock Synchronization**
+
+The ``--swv_system_clock`` parameter must match the actual CPU frequency (
+) at the time of initialization. On this platform, the value depends on the initialization mode:
+
+- ``32000000`` (32 MHz) when using ``PLATFORM_CLOCK_USERSPACE``.
+- ``250000000`` (250 MHz) when using ``PLATFORM_CLOCK_MAX``.
+
+Firmware can safely switch frequency after initialization without affecting ITM.
+
+### ITM Profiling
+
+The firmware is instrumented with ARM DWT (Data Watchpoint and Trace) PC sampling,
+which streams program counter samples over the SWO pin to the onboard STLINK-V3EC
+debugger. This allows non-invasive statistical profiling with no firmware overhead
+beyond the ITM/TPIU peripheral configuration.
+
+#### Requirements
+
+- [pyOCD](https://pyocd.io/) — GDB server and SWO data source
+- [orbuculum](https://github.com/orbcode/orbuculum) — ITM packet decoder and `orbtop` profiler
+
+#### Start the GDB server
+
+```
+pyocd gdbserver -j utils/
+0001292 I Set SWO clock to 2000000 [swv]
+0001293 I SWV raw server started on port 3443 [server]
+0001326 I GDB server listening on port 3333 (core 0) [gdbserver]
+```
+
+pyOCD will expose raw SWO data on TCP port 3443.
+
+The `utils/pyocd.yml` config sets:
+
+```yaml
+target_override: stm32h573iikxq
+connect_mode: attach        # attach without halting — firmware keeps running
+enable_swv: true
+swv_system_clock: 32000000  # must match actual CPU clock
+swv_clock: 2000000          # SWO baud rate
+```
+
+> **Note:** `swv_system_clock` must match the CPU clock your firmware is actually
+> running at, otherwise the SWO baud rate will be wrong and no data will appear.
+> Update it if you switch between 32 MHz and 250 MHz modes.
+
+#### Run orbtop
+
+```
+orbtop -s localhost:3443 -p ITM -e path/to/firmware.elf
+```
+
+Example output:
+
+```
+ 95.26%    22286 run_bench
+  4.06%      951 UART_WaitOnFlagUntilTimeout
+  0.38%       89 HAL_GetTick
+  0.14%       33 HAL_UART_Transmit
+-----------------
+ 99.84%    23359 of  23393  Samples
+[V-TH] Interval = 1000ms / 33113316 (~33106 Ticks/ms)
+```
+
+The status flags `[V-TH]` mean: **V**alid samples, **T**PIU synced, **H**ardware PC sampling active.
+
 ## License
 
 See LICENSE.txt files in respective driver directories.
+
+## Appendix
+
+### Installing Orbuculum
+
+To install Orbuculum on Linux from source do following:
+
+```
+git clone https://github.com/orbcode/orbuculum
+cd orbuculum
+meson setup build
+cd build
+ninja
+sudo ninja install
+```

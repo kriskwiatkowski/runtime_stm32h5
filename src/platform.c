@@ -12,6 +12,9 @@
 #include "stm32h5xx.h"
 #include "stm32h5xx_hal.h"
 
+// Flags if cyclecount was initialized
+static bool kCyclecountInit = false;
+
 uint32_t platform_xorshift32_u32(void);
 void     platform_usart1_init(void);
 void    *platform_get_uart1_handle(void);
@@ -84,7 +87,8 @@ static void cyclecount_reset(void) {
  * @retval false if cycle counting could not be enabled (e.g., DWT not present).
  */
 static bool cyclecount_init(void) {
-    if (CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk) {
+
+    if (kCyclecountInit) {
         return true;  // Already initialized
     }
 
@@ -107,19 +111,66 @@ static bool cyclecount_init(void) {
     DWT->CYCCNT = 0;
 
     /* Start cycle counter. Note that this operation will try to write read-only
-     * bits 31:28 (NUMCOMP). Nevertheless, Writing 0 does not affect them; they
-     * will still read back as the hardware value.
+     * bits 31:28 (NUMCOMP).
      * It will also enable PC sampling and set sync tap to control packet rate. */
-    DWT->CTRL |=
-        DWT_CTRL_CYCCNTENA_Msk | DWT_CTRL_PCSAMPLENA_Msk | DWT_CTRL_SYNCTAP_Msk;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+    // Ensure DWT_CTRL_CYCCNTENA_Msk is written
+    __DSB();
+    __ISB();
+
+    /* Enable PC sampling in the DWT. Every N clock cycles, the current value of
+     * the PC is automatically captured and emitted as an ITM packet over SWO. */
+    DWT->CTRL |= DWT_CTRL_PCSAMPLENA_Msk;
+    /* Sets which bit of the cycle counter is used to trigger periodic synchronisation
+     * packets on the SWO stream. This allow the host-side decoder (orbuculum, pyOCD)
+     * to lock onto the byte stream and correctly frame the incoming ITM packets.
+     * PC samples have source ID = 2 and carry 32-bit value. This corresponds to
+     * the value 0x17 in python script for reading ITM packets.
+     * At higher speed the DWT_CTRL_CYCTAP_Pos may be the better choice (avoids flooding
+     * SWO). */
+    // TODO: This doesn't seem to be supported by the board.
+    // It seems like SYNCTAP is RAZ/WI on STM32H573 - the hardware uses a fixed
+    //       internal tap at bit 6 (÷64) regardless of SYNCTAP value.
+    //DWT->CTRL |= DWT_CTRL_SYNCTAP_Msk;
+
+    /* Controls the PC sampling rate using a two-stage clock divider:
+     *
+     * Stage 1 (SYNCTAP=0x3): taps bit 14 of CYCCNT, producing a tick every
+     *                        2^14 = 16384 cycles.
+     * Stage 2 (POSTPRESET=15): counts 16 ticks from stage 1 before capturing
+     *                        and emitting a PC sample over SWO.
+     *
+     * sample rate = CPU_CLK / (64 * (POSTPRESET + 1))
+     *             = 32 MHz  / (64 * 16)
+     *             ~ 31,250 samples/sec
+     *             = one sample every 1,024 cycles
+     *
+     * It seems, that on the board the SYNCTAP is fixed to SYNCTAP=0x1, which taps
+     * bit 6 of CYCCNT, producing a tick every 64 cycles.
+     *
+     * For more information see Architecture Reference Manual, section about
+     * "DWT_CTRL, Control register"
+     */
+    DWT->CTRL |= (0xF << DWT_CTRL_POSTPRESET_Pos);
 
     // Wait until cycle counter is enabled
     while (!(DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk)) {
     }
+
     // Wait until cycle counter starts counting
     while (DWT->CYCCNT == 0) {
     }
+
+    kCyclecountInit = true;
     return true;
+}
+
+// SWO clock is based on CPU clock, so it needs to be updated when CPU clock changes.
+static void update_swo_clock(uint32_t cpu_hz) {
+    static const uint32_t target_swo_baud = 2000000;  // 2 MHz is very stable
+    // Prescaler = (CPU_Clock / Target_Baud) - 1
+    TPI->ACPR = (cpu_hz / target_swo_baud) - 1;
 }
 
 // Enables ITM (Instrumentation Trace Macrocell) for printf support in SWO viewer. This is optional.
@@ -132,6 +183,11 @@ static void itm_init(void) {
 
     // Enable TRACE_EN in DBGMCU
     DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
+
+    // Use UART/NRZ encoding, which is what STLINK expects on the SWO pin
+    TPI->SPPR = 2;
+    // Update SWO clock based on current CPU clock
+    update_swo_clock(HAL_RCC_GetSysClockFreq());
 
     /* Master Trace Control:
      * Bit 0 - ITMENA: Enable ITM
@@ -146,13 +202,6 @@ static void itm_init(void) {
     ITM->TER = 0xFFFFFFFF;
 }
 
-// SWO clock is based on CPU clock, so it needs to be updated when CPU clock changes.
-static void update_swo_clock(uint32_t cpu_hz) {
-    static const uint32_t target_swo_baud = 2000000;  // 1 MHz is very stable
-    // Prescaler = (CPU_Clock / Target_Baud) - 1
-    TPI->ACPR = (cpu_hz / target_swo_baud) - 1;
-}
-
 void platform_log(const struct platform_log_t *log) {
     uint8_t c = log->channel;
     if (log->type == PLATFORM_LOG_TYPE_U32) {
@@ -160,6 +209,8 @@ void platform_log(const struct platform_log_t *log) {
         while (ITM->PORT[c].u32 == 0UL)
             ;
         ITM->PORT[c].u32 = log->a.data;
+        while (ITM->PORT[c].u32 == 0UL)
+            ;
     } else if (log->type == PLATFORM_LOG_TYPE_STRING) {
         // Log string data to channel 1
         const uint8_t *str = (const uint8_t *)log->a.str;
@@ -359,8 +410,8 @@ int platform_init(platform_op_mode_t a) {
     platform_usart1_init(); /* Initialize USART1, this is connected to CN10 (ST-Link Virtual COM Port)
                              * and is used for debugging and communication with the host.
                              * It is also possibel to use USAERT3, that is connected to D0/D1 (Arduino ports). */
-    cyclecount_init();  // Initialize the cycle counter, which is used for timing measurements.
     itm_init();
+    cyclecount_init();  // Initialize the cycle counter, which is used for timing measurements.
     return 0;
 }
 

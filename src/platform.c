@@ -138,21 +138,21 @@ static bool cyclecount_init(void) {
      *
      * Stage 1 (SYNCTAP=0x3): taps bit 14 of CYCCNT, producing a tick every
      *                        2^14 = 16384 cycles.
-     * Stage 2 (POSTPRESET=15): counts 16 ticks from stage 1 before capturing
+     * Stage 2 (POSTPRESET=7): counts 8 ticks from stage 1 before capturing
      *                        and emitting a PC sample over SWO.
      *
      * sample rate = CPU_CLK / (64 * (POSTPRESET + 1))
-     *             = 32 MHz  / (64 * 16)
-     *             ~ 31,250 samples/sec
-     *             = one sample every 1,024 cycles
+     *             = 32 MHz  / (64 * 8)
+     *             ~ 62,500 samples/sec
+     *             = one sample every 512 cycles
      *
-     * It seems, that on the board the SYNCTAP is fixed to SYNCTAP=0x1, which taps
+     * It seems, that on the board the SYNCTAP is fixed to SYNCTAP=0x3, which taps
      * bit 6 of CYCCNT, producing a tick every 64 cycles.
      *
      * For more information see Architecture Reference Manual, section about
      * "DWT_CTRL, Control register"
      */
-    DWT->CTRL |= (0xF << DWT_CTRL_POSTPRESET_Pos);
+    DWT->CTRL |= (0x7 << DWT_CTRL_POSTPRESET_Pos);
 
     // Wait until cycle counter is enabled
     while (!(DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk)) {
@@ -168,7 +168,7 @@ static bool cyclecount_init(void) {
 
 // SWO clock is based on CPU clock, so it needs to be updated when CPU clock changes.
 static void update_swo_clock(uint32_t cpu_hz) {
-    static const uint32_t target_swo_baud = 2000000;  // 2 MHz is very stable
+    static const uint32_t target_swo_baud = 4000000;  // 4 MHz is very stable
     // Prescaler = (CPU_Clock / Target_Baud) - 1
     TPI->ACPR = (cpu_hz / target_swo_baud) - 1;
 }
